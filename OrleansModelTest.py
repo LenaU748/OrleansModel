@@ -1,10 +1,21 @@
-from shapely.geometry import Point as shapePoint
-from shapely.geometry import Polygon as shapePolygon
 import random
 import math
 import pandas as pd
 import numpy 
 
+
+def calcAgeIndex(_age, _list):
+    age_index_list = []
+
+    for i in range(len(_list)):
+        if _list[i] <= _age:
+            age_index_list.append(i)
+        else:
+            break
+
+    _age_index = max(age_index_list)
+
+    return _age_index
 
 def totalRiskCalculator(_age, _sex, _conditions): 
 
@@ -118,19 +129,6 @@ def totalRiskCalculator(_age, _sex, _conditions):
                             numpy.prod(deathCondProd)]
         return conditionsProds
 
-    def calcAgeIndex(_age, _list):
-        age_index_list = []
-
-        for i in range(len(_list)):
-            if _list[i] <= _age:
-                age_index_list.append(i)
-            else:
-                break
-
-        _age_index = max(age_index_list)
-
-        return _age_index
-
     global age_index
     age_index = calcAgeIndex(_age, age_list)
 
@@ -154,12 +152,6 @@ def totalRiskCalculator(_age, _sex, _conditions):
     return calculateRisk()
     #print(calculateRisk())
 
-# def generateGrid():
-#     grid = []
-#     for x in range(225):
-#         for y in range(225):
-#             grid.append((x, y))
-#     return grid
 grid = []
 for x in range(225):
     for y in range(225):
@@ -192,10 +184,6 @@ def generatePopulation(pop_size):
                  (0.934, "45 to 59 min", 8),
                  (1.000, "60 or more min", 9)]
 
-    # coords = [(1.8, 4),(3.6, 2.6),(2, 0.6),(2.2, -0.4),(2.4, -3.8), (1.8, -3.8), (1.8, -2.2),
-    #           (0.6, -1.6),(-0.6, -3.2),(-4.2, -0.2),(-1.6, 2.4),(-0.8, 1.6),(0, 2.2),(0.2, 2)]
-    # checkPoly = shapePolygon(coords)
-
     for i in range(pop_size):
         rnd = random.uniform(0, 1)
 
@@ -213,7 +201,6 @@ def generatePopulation(pop_size):
 
         # Assigns agent underlying health conditions
         _conditions = []
-        #if rnd <= 0.44:
         if _age >= 18:
             rnd1 = random.uniform(0, 1)
             rnd2 = random.uniform(0, 1)
@@ -241,9 +228,6 @@ def generatePopulation(pop_size):
             if rnd8 <= 0.05: # change this later once stats are found
                 _conditions.append("other")
 
-            # else:
-                # find stats for 18 and under here
-
         else:
             _conditions = []
 
@@ -255,21 +239,6 @@ def generatePopulation(pop_size):
 
         # Assigns agent home coordinates
         _home = random.choice(grid)
-        # agentCoord = shapePoint(xh, yh)
-
-        # if agentCoord.within(checkPoly):
-        #     _home = (xh, yh)
-        # else:
-        #     while not agentCoord.within(checkPoly):
-        #         wh = random.uniform(-8, 8)
-        #         zh = random.uniform(-5, 5)
-        #         agentCoord = shapePoint(wh, zh)
-
-        #         if agentCoord.within(checkPoly):
-        #             _home = (wh, zh)
-        #             break
-        #         else:
-        #             continue
 
         # Assigns agent work coordinates
         for w in range(len(popByTime)):
@@ -280,7 +249,19 @@ def generatePopulation(pop_size):
                 break
         
         agentRisk = totalRiskCalculator(_age, _sex, _conditions)
-        agentData = [i, agentRisk[0], agentRisk[1], agentRisk[2], _travel_time, _home, _work]
+
+        _infectRnd = random.uniform(0, 1)
+        _hospRnd = random.uniform(0, 1)
+        _deathRnd = random.uniform(0, 1)
+
+        _ulhBool = 'yes' if _conditions else 'no'
+
+        ageList = [0, 5, 18, 30, 40, 50, 60, 70]
+        _ageIndex = ageList[calcAgeIndex(_age, ageList)]
+
+        agentData = [i, _ageIndex, _sex, _ulhBool, agentRisk[0], agentRisk[1], agentRisk[2], 
+                    _travel_time, _home, _work, 
+                    _infectRnd, _hospRnd, _deathRnd]
         allAgentData.append(agentData)
 
     return allAgentData
@@ -292,17 +273,17 @@ def indexGenerator(pop_size):
     return _indexGen
 
 def createPopDataframe():
-    pop = 100
+    pop = 390144
     _allAgentData = generatePopulation(pop)
     indexGen = indexGenerator(pop) 
     agent_df = pd.DataFrame(data=_allAgentData,
                             index=indexGen,
-                            columns=['agent', 'hosp risk', 'icu risk', 'death risk', 'travel time', 'home', 'work'])
-    pd.set_option("display.max_rows", None, "display.max_columns", None)
-    #print(agent_df)
+                            columns=['agent', 'age', 'sex', 'ulh', 'hosp risk', 'icu risk', 'death risk', 
+                                     'travel time', 'home', 'work',
+                                      'infect rnd', 'hosp rnd', 'death rnd'])
+    #pd.set_option("display.max_rows", None, "display.max_columns", None)
 
-    days = 100
-    #currentPos = []
+    days = 10
 
     #Calculates 4 locations of an agent per day
     for d in range(days):
@@ -314,8 +295,8 @@ def createPopDataframe():
                                random.choice(grid), #go to a random spot (recreation)
                                agent_df.at[i, 'home']]) #end at home again
         ds = str(d)
-        agent_df['Day ' + ds] = currentPos
-        #agent_df['Status ' + ds] = 'S'
+        agent_df[f'Day {ds}'] = currentPos
+        
 
     #print(agent_df)
     def generateStatus(_days, _pop):
@@ -334,8 +315,8 @@ def createPopDataframe():
 
         return len(infected_set.intersection(other_set)) > 0
 
-    def countDaysInfected(col):
-        return (status_df[col].values == 'I').sum()
+    def countDay(col, val):
+        return (status_df[col].values == val).sum()
 
     statAgentData = generateStatus(days, pop)
     statIndexGen = indexGenerator(days) 
@@ -345,101 +326,105 @@ def createPopDataframe():
                              index=statIndexGen,
                              columns=statColumnGen)
 
-    #print(status_df)
-
     #introduce COVID into population
     status_df.at[0, 1] = 'I'
     status_df.at[0, 2] = 'I'
     status_df.at[0, 3] = 'I'
 
-
     for d in range(days):
-        infectedAgents = status_df.columns[status_df.isin(['I']).any()]
+        infectedAgents = status_df.columns[status_df.isin(['I']).any()].tolist()
+        hospitalAgents = status_df.columns[status_df.isin(['H']).any()].tolist()
+        deadAgents = status_df.columns[status_df.isin(['D']).any()].tolist()
         for i in range(len(infectedAgents)):
             for p in range(pop):
                 # Checks if infected agents share a location with other agents
                 # If there is a shared location within the same day, the susceptible individual gets infected
                 # and is added to the list of infectedAgents for futurre loops
-                infect = agent_df.at[infectedAgents[i],'Day '+ str(d)]
-                everyone = agent_df.at[p, 'Day ' + str(d)]
+                infect = agent_df.at[infectedAgents[i], f'Day {str(d)}']
+                everyone = agent_df.at[p, f'Day {str(d)}']
 
                 if common_location(infect, everyone):
                     status_df.at[d+1, p] = 'I' 
 
                 # Makes sure that infected people stay contaigious for 12 days 
                 # Source:https://www.cdc.gov/flu/symptoms/flu-vs-covid19.htm#:~:text=How%20long%20someone%20can%20spread,or%20symptoms%20first%20appeared.
-                if countDaysInfected(infectedAgents[i]) <= 12:
+                daysI = countDay(infectedAgents[i], 'I')
+                daysH = countDay(infectedAgents[i], 'H')
+                
+                if daysI <= 12: # and daysI > 0
                     status_df.at[d+1, infectedAgents[i]] = 'I'
+                else: # daysI > 12:
+                    if agent_df.at[infectedAgents[i], 'hosp rnd'] <= agent_df.at[infectedAgents[i], 'hosp risk']:
+                        if daysH <= 10:
+                            status_df.at[d, infectedAgents[i]] = 'H'
+                        elif agent_df.at[infectedAgents[i], 'death rnd'] <= agent_df.at[infectedAgents[i], 'death risk']:
+                            status_df.at[d, infectedAgents[i]] = 'D'
+                        else:
+                            status_df.at[d, infectedAgents[i]] = 'S'
+                    else:
+                        status_df.at[d, infectedAgents[i]] = 'S'
 
-                    rndH = random.uniform(0, 1)
-                #     rndD = random.uniform(0, 1)
-                #     if rndH <= agent_df.at[p, 'hosp risk']:
-                #         #Day 22: This is the median amount of days it takes for COVID-19 survivors to be released from hospital
-                #         for h in range(10):
-                #             status_df.at[d+h, p] = 'H'
-                #         if rndD <= agent_df.at[p, 'death risk']:
-                #             rTime = days - d - 10 
-                #             for x in range(rTime):
-                #                 r = days - rTime
-                #                 status_df.at[r, p] = 'D'
-                #         else:
-                #             status_df.at[d+11, p] = 'S'
-                #     elif rndD <= agent_df.at[p, 'death risk']:
-                #         rTime = days - d - 6
-                #         for x in range(6):
-                #             status_df.at[x+d, p] = 'I'
-                #         for y in range(rTime):
-                #             r = days - rTime
-                #             status_df.at[r, p] = 'D'
-                #     else:
-                #         status_df.at[d, p] = 'S'
-
-                else:
-                    status_df.at[d+1, infectedAgents[i]] = 'S'
-
-    print(status_df)
-
-    #start coding hospitalization and death overwrite here
-
-    
-                #elif daysInfected > 12:
-                #     #status_df.at[d+1, infectedAgents[i]] = 'S'
-                #     rndH = random.uniform(0, 1)
-                #     rndD = random.uniform(0, 1)
-                #     if rndH <= agent_df.at[p, 'hosp risk']:
-                #         #Day 22: This is the median amount of days it takes for COVID-19 survivors to be released from hospital
-                #         for h in range(10):
-                #             status_df.at[d+h, p] = 'H'
-                #         if rndD <= agent_df.at[p, 'death risk']:
-                #             rTime = days - d - 10 
-                #             for x in range(rTime):
-                #                 r = days - rTime
-                #                 status_df.at[r, p] = 'D'
-                #         else:
-                #             status_df.at[d+11, p] = 'S'
-                #     elif rndD <= agent_df.at[p, 'death risk']:
-                #         rTime = days - d - 6
-                #         for x in range(6):
-                #             status_df.at[x+d, p] = 'I'
-                #         for y in range(rTime):
-                #             r = days - rTime
-                #             status_df.at[r, p] = 'D'
-                #     else:
-                #         status_df.at[d, p] = 'S'
-                # else:
-                #     status_df.at[d+1, p] = 'S'
-    # for d in range(days):
-    #     for p in range(pop):
-    #         if status_df.at[d, p] == 'I':
-    #             rndD = random.uniform(0, 1)
-    #             rndH = random.uniform(0, 1)
-    #             if rndD <= agent_df.at[p, 'death risk']:
-    #                 status_df.at[d+1, p] = 'D'
-    #             elif rndH <= agent_df.at[p, 'hosp risk']:
-    #                 status_df.at[d+1, p] = 'H' 
-    #             else:
-    #                 status_df.at[d+1, p] = status_df.at[d+1, p]
+    #print(status_df)
+    # print(len(infectedAgents))
+    # print(len(hospitalAgents))
+    # print(len(deadAgents))
 
 
+    #Table of underlying health conditions versus counts of infected and dead
+    ulhI = [agent_df.at[infectedAgents[i], 'ulh'] for i in range(len(infectedAgents))]
+    numIY = ulhI.count('yes')
+    numIN = ulhI.count('no')
+
+    ulhD = [agent_df.at[deadAgents[i], 'ulh'] for i in range(len(deadAgents))]
+    numDY = ulhD.count('yes')
+    numDN = ulhD.count('no')
+
+    ulhData = {'Infected': [numIY, numIN], 'Dead': [numDY, numDN]}
+    ulh_df = pd.DataFrame(data=ulhData, index=['yes','no'])
+
+    #Table of age versus counts of infected and dead
+    ageI = [agent_df.at[infectedAgents[i], 'age'] for i in range(len(infectedAgents))]
+    numI4 = ageI.count(0)
+    numI17 = ageI.count(5)
+    numI29 = ageI.count(18)
+    numI39 = ageI.count(30)
+    numI49 = ageI.count(40)
+    numI59 = ageI.count(50)
+    numI69 = ageI.count(60)
+    numI100 = ageI.count(70)
+
+    ageD = [agent_df.at[deadAgents[i], 'age'] for i in range(len(deadAgents))]
+    numD4 = ageD.count(0)
+    numD17 = ageD.count(5)
+    numD29 = ageD.count(18)
+    numD39 = ageD.count(30)
+    numD49 = ageD.count(40)
+    numD59 = ageD.count(50)
+    numD69 = ageD.count(60)
+    numD100 = ageD.count(70)
+
+    ageData = {'Infected': [numI4, numI17, numI29, numI39, numI49, numI59, numI69, numI100], 
+                'Dead': [numD4, numD17, numD29, numD39, numD49, numD59, numD69, numD100]}
+    age_df = pd.DataFrame(data=ageData,
+                          index=['0-4', '5-17', '18-29', '30-39', '40-49', '50-59', '60-69', '70+'])
+
+    #Table of sex versus counts of infected and dead
+    sexI = [agent_df.at[infectedAgents[i], 'sex'] for i in range(len(infectedAgents))]
+    numIF = sexI.count('female')
+    numIM = sexI.count('male')
+
+    sexD = [agent_df.at[deadAgents[i], 'sex'] for i in range(len(deadAgents))]
+    numDF = sexD.count('female')
+    numDM = sexD.count('male')        
+        
+    sexData = {'Infected': [numIM, numIF], 'Dead': [numDM, numDF]}
+    sex_df = pd.DataFrame(data=sexData, index=['male','female'])
+
+    print(sex_df)
+    print(ulh_df)
+    print(age_df)
+    sex_df.to_csv(r'C:\Users\Falcon Robotics\Desktop\Lena Science Fair\Data Files\SexDF.csv')
+    ulh_df.to_csv(r'C:\Users\Falcon Robotics\Desktop\Lena Science Fair\Data Files\ULHDF.csv')
+    age_df.to_csv(r'C:\Users\Falcon Robotics\Desktop\Lena Science Fair\Data Files\AgeDF.csv')
 
 createPopDataframe()
