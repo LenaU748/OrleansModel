@@ -144,7 +144,7 @@ def totalRiskCalculator(_age, _sex, _conditions):
             death_odds = death_odds * male_or[2]
 
         total_odds = [hosp_odds, icu_odds, death_odds]
-        total_prob = [oddsToRisk(hosp_odds)*100, oddsToRisk(icu_odds)*100, oddsToRisk(death_odds)*100]
+        total_prob = [oddsToRisk(hosp_odds), oddsToRisk(icu_odds), oddsToRisk(death_odds)]
         total = [total_odds, total_prob]
 
         return total_prob
@@ -153,8 +153,10 @@ def totalRiskCalculator(_age, _sex, _conditions):
     #print(calculateRisk())
 
 grid = []
-for x in range(225):
-    for y in range(225):
+#307824 units of 6 feet^2 
+#0.78 units of 6 feet^2 per person 
+for x in range(2500):
+    for y in range(2500):#700):
         grid.append((x, y))
 
 def generatePopulation(pop_size):
@@ -259,7 +261,7 @@ def generatePopulation(pop_size):
         ageList = [0, 5, 18, 30, 40, 50, 60, 70]
         _ageIndex = ageList[calcAgeIndex(_age, ageList)]
 
-        agentData = [i, _ageIndex, _sex, _ulhBool, agentRisk[0], agentRisk[1], agentRisk[2], 
+        agentData = [i, _ageIndex, _sex, _ulhBool, agentRisk[0], agentRisk[2], 
                     _travel_time, _home, _work, 
                     _infectRnd, _hospRnd, _deathRnd]
         allAgentData.append(agentData)
@@ -273,32 +275,37 @@ def indexGenerator(pop_size):
     return _indexGen
 
 def createPopDataframe():
+    print("generating pop")
     pop = 390144
     _allAgentData = generatePopulation(pop)
     indexGen = indexGenerator(pop) 
     agent_df = pd.DataFrame(data=_allAgentData,
                             index=indexGen,
-                            columns=['agent', 'age', 'sex', 'ulh', 'hosp risk', 'icu risk', 'death risk', 
+                            columns=['agent', 'age', 'sex', 'ulh', 'hosp risk', 'death risk', 
                                      'travel time', 'home', 'work',
                                       'infect rnd', 'hosp rnd', 'death rnd'])
-    #pd.set_option("display.max_rows", None, "display.max_columns", None)
+    pd.set_option("display.max_rows", None, "display.max_columns", None)
+    print("Pop generated")
 
-    days = 10
+    #From Thursday, 5 March 2020 to Monday, 23 November 2020, there are 263 days
+    days = 263
 
     #Calculates 4 locations of an agent per day
+    print("Calc locations")
     for d in range(days):
         currentPos = []
         for i in range(pop):
             currentPos.append([agent_df.at[i, 'home'], #start at home
                                agent_df.at[i, 'work'], #go to work
                                random.choice(grid), #go to a random spot (recreation)
-                               random.choice(grid), #go to a random spot (recreation)
-                               agent_df.at[i, 'home']]) #end at home again
+                               random.choice(grid)]) #go to a random spot (recreation)
+                              
         ds = str(d)
         agent_df[f'Day {ds}'] = currentPos
-        
 
+    print("Locations calculated")
     #print(agent_df)
+    
     def generateStatus(_days, _pop):
         _statAgentData = []
         _statAgent = []
@@ -310,7 +317,7 @@ def createPopDataframe():
         return _statAgentData
 
     def common_location(infected, other):
-        infected_set = set(infected)
+        infected_set = infected
         other_set = set(other)
 
         return len(infected_set.intersection(other_set)) > 0
@@ -318,6 +325,7 @@ def createPopDataframe():
     def countDay(col, val):
         return (status_df[col].values == val).sum()
 
+    print("Generating status")
     statAgentData = generateStatus(days, pop)
     statIndexGen = indexGenerator(days) 
     statColumnGen = indexGenerator(pop)
@@ -326,50 +334,72 @@ def createPopDataframe():
                              index=statIndexGen,
                              columns=statColumnGen)
 
+    print("Status dataframe generated")
+
     #introduce COVID into population
+    print("Introducing infected agents")
     status_df.at[0, 1] = 'I'
     status_df.at[0, 2] = 'I'
     status_df.at[0, 3] = 'I'
+    status_df.at[0, 4] = 'I'
+    status_df.at[0, 5] = 'I'
 
     for d in range(days):
         infectedAgents = status_df.columns[status_df.isin(['I']).any()].tolist()
-        hospitalAgents = status_df.columns[status_df.isin(['H']).any()].tolist()
+        #hospitalAgents = status_df.columns[status_df.isin(['H']).any()].tolist()
         deadAgents = status_df.columns[status_df.isin(['D']).any()].tolist()
+        infect = []
         for i in range(len(infectedAgents)):
-            for p in range(pop):
-                # Checks if infected agents share a location with other agents
-                # If there is a shared location within the same day, the susceptible individual gets infected
-                # and is added to the list of infectedAgents for futurre loops
-                infect = agent_df.at[infectedAgents[i], f'Day {str(d)}']
-                everyone = agent_df.at[p, f'Day {str(d)}']
+            infect.extend(agent_df.at[infectedAgents[i], f'Day {str(d)}'])
 
-                if common_location(infect, everyone):
-                    status_df.at[d+1, p] = 'I' 
+        infect = set(infect) 
 
-                # Makes sure that infected people stay contaigious for 12 days 
-                # Source:https://www.cdc.gov/flu/symptoms/flu-vs-covid19.htm#:~:text=How%20long%20someone%20can%20spread,or%20symptoms%20first%20appeared.
-                daysI = countDay(infectedAgents[i], 'I')
-                daysH = countDay(infectedAgents[i], 'H')
-                
-                if daysI <= 12: # and daysI > 0
-                    status_df.at[d+1, infectedAgents[i]] = 'I'
-                else: # daysI > 12:
-                    if agent_df.at[infectedAgents[i], 'hosp rnd'] <= agent_df.at[infectedAgents[i], 'hosp risk']:
-                        if daysH <= 10:
-                            status_df.at[d, infectedAgents[i]] = 'H'
-                        elif agent_df.at[infectedAgents[i], 'death rnd'] <= agent_df.at[infectedAgents[i], 'death risk']:
-                            status_df.at[d, infectedAgents[i]] = 'D'
-                        else:
-                            status_df.at[d, infectedAgents[i]] = 'S'
+        for p in range(pop):
+            # Checks if infected agents share a location with other agents
+            # If there is a shared location within the same day, the susceptible individual gets infected
+            # and is added to the list of infectedAgents for futurre loops
+            #infect = agent_df.at[infectedAgents[i], f'Day {str(d)}']
+            everyone = agent_df.at[p, f'Day {str(d)}']
+
+            # https://www.nytimes.com/interactive/2020/us/louisiana-coronavirus-cases.html
+            # First cases reported on March 5th
+            if days < 10: #March 13th: limits gatherings to 250 people
+                x = 0.555 #Quaruntine reduces risk by 90%
+            else:
+                x = 0.0555 #After quaruntine 1 in 18 people have been infected
+
+            if common_location(infect, everyone):
+                if random.uniform(0, 1) < x:
+                    status_df.at[d+1, p] = 'I'
+
+
+            # Makes sure that infected people stay contaigious for 12 days 
+            # Source:https://www.cdc.gov/flu/symptoms/flu-vs-covid19.htm#:~:text=How%20long%20someone%20can%20spread,or%20symptoms%20first%20appeared.
+        for i in range(len(infectedAgents)):    
+            daysI = countDay(infectedAgents[i], 'I')
+            daysH = countDay(infectedAgents[i], 'H')
+            
+            if daysI <= 12: # and daysI > 0
+                status_df.at[d+1, infectedAgents[i]] = 'I'
+            else: # daysI > 12:
+                if agent_df.at[infectedAgents[i], 'hosp rnd'] <= agent_df.at[infectedAgents[i], 'hosp risk']:
+                    if daysH <= 10:
+                        status_df.at[d+1, infectedAgents[i]] = 'H'
+                    elif agent_df.at[infectedAgents[i], 'death rnd'] <= agent_df.at[infectedAgents[i], 'death risk']:
+                        status_df.at[d+1, infectedAgents[i]] = 'D'
                     else:
-                        status_df.at[d, infectedAgents[i]] = 'S'
+                        status_df.at[d+1, infectedAgents[i]] = 'S'
+                else:
+                    status_df.at[d+1, infectedAgents[i]] = 'S'
 
-    #print(status_df)
+        print(d)
+
+    # print(status_df)
     # print(len(infectedAgents))
     # print(len(hospitalAgents))
     # print(len(deadAgents))
 
-
+    print("generating final dataframes")
     #Table of underlying health conditions versus counts of infected and dead
     ulhI = [agent_df.at[infectedAgents[i], 'ulh'] for i in range(len(infectedAgents))]
     numIY = ulhI.count('yes')
@@ -427,4 +457,4 @@ def createPopDataframe():
     ulh_df.to_csv(r'C:\Users\Falcon Robotics\Desktop\Lena Science Fair\Data Files\ULHDF.csv')
     age_df.to_csv(r'C:\Users\Falcon Robotics\Desktop\Lena Science Fair\Data Files\AgeDF.csv')
 
-createPopDataframe()
+createPopDataframe() 
